@@ -1,0 +1,8 @@
+{
+  "name": "Kênh Vô Sự",
+  "description": "Lắng đọng tâm hồn, tìm về sự bình yên bên trong qua những bài giảng và chia sẻ đầy ý nghĩa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
