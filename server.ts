@@ -28,7 +28,7 @@ async function getInnertube() {
 // Global cache to avoid spamming the YouTube API
 let cacheData: any = null;
 let lastFetchTime = 0;
-const CACHE_DURATION = 1000 * 60 * 5; // 5 minutes
+const CACHE_DURATION = 1000 * 60; // Reduce to 1 minute to prevent stale data debugging
 
 function translateVietnamese(text?: string) {
   if (!text) return 'Gần đây';
@@ -58,8 +58,13 @@ function translateVietnamese(text?: string) {
 
 function checkIsShort(item: any, plTitle?: string) {
   if (item.type === 'ShortsLockupView') return true;
-  if (plTitle && plTitle.toLowerCase().includes('pháp cú')) return true;
-  if (item.duration?.seconds && item.duration.seconds <= 61) return true;
+  if (plTitle) {
+    const titleL = plTitle.toLowerCase();
+    if (titleL === 'kinh lời vàng phật dạy (pháp cú)' || titleL === 'kinh pháp cú - dhammapada' || titleL === '37 phẩm trợ đạo') {
+       return true; // Mark as shorts to display in 9:16 aspect ratio
+    }
+  }
+  if (item.duration?.seconds && item.duration.seconds <= 65) return true;
   const thumbs = item.thumbnails || item.thumbnail || item.on_tap_endpoint?.payload?.thumbnail?.thumbnails;
   if (thumbs?.[0]) {
     // 9:16 aspect ratio usually has height > width
@@ -90,12 +95,11 @@ async function fetchChannelData(channelId: string) {
 
   if (playlistsData?.playlists) {
     const pList = playlistsData.playlists.filter((p: any) => p.content_type === 'PLAYLIST');
-    
-    const promises = pList.map(async (p: any, idx: number) => {
+        playlistsResult = [];
+      for (const p of pList) {
         const plId = p.content_id;
         const plTitle = p.metadata?.title?.text || p.title?.text || 'Untitled';
         
-        // Try to fetch immediately (no stagger)
         let videos = [];
         try {
           const pl = await yt.getPlaylist(plId);
@@ -104,10 +108,8 @@ async function fetchChannelData(channelId: string) {
             const title = item.title?.text || item.overlay_metadata?.primary_text?.text || 'Untitled';
             const thumbnail = item.thumbnails?.[0]?.url || item.thumbnail?.[0]?.url || item.on_tap_endpoint?.payload?.thumbnail?.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
             
-            // Try to extract published date from various fields
             let published = item.published?.text || item.overlay_metadata?.secondary_text?.text;
             if (!published && item.video_info?.runs?.length > 0) {
-               // The last run is usually the date (e.g. "28 views", " • ", "7 hours ago")
                published = item.video_info.runs[item.video_info.runs.length - 1].text;
             } else if (!published && item.video_info?.text) {
                published = item.video_info.text.split('•').pop()?.trim();
@@ -137,14 +139,12 @@ async function fetchChannelData(channelId: string) {
           return allVideosMap.get(v.id);
         });
 
-        return {
+        playlistsResult.push({
           id: plId,
           title: plTitle,
           videos
-        };
-      });
-
-      playlistsResult = await Promise.all(promises);
+        });
+      }
   }
 
   // Process Shorts for the All tab
@@ -210,6 +210,10 @@ async function startServer() {
 
   app.get('/api/data', async (req, res) => {
     try {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      
       const channelId = req.query.channelId || 'UClxiXO5JjB3k5y3-4OtAzug';
       const data = await fetchChannelData(channelId as string);
       res.json(data);
