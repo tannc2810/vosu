@@ -173,7 +173,7 @@ export default function App() {
           <div className="sticky top-0 z-40 bg-saffron-50/90 backdrop-blur-md py-4 mb-6 md:mb-8 flex flex-col gap-4 items-start justify-between -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.1)] border-b border-saffron-200/60">
             <div className="flex flex-col gap-1.5 w-full">
               <label htmlFor="category-select" className="text-saffron-800 text-sm font-semibold uppercase tracking-wider">
-                CHỌN CHỦ ĐỀ
+                MỜI CHỌN CHỦ ĐỀ PHÁP ÂM ĐỂ NGHE
               </label>
               <select
                 id="category-select"

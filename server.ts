@@ -28,7 +28,8 @@ async function getInnertube() {
 // Global cache to avoid spamming the YouTube API
 let cacheData: any = null;
 let lastFetchTime = 0;
-const CACHE_DURATION = 1000 * 60; // Reduce to 1 minute to prevent stale data debugging
+const CACHE_DURATION = 1000 * 60 * 60 * 12; // 12 hours
+let isFetchingData = false;
 
 function translateVietnamese(text?: string) {
   if (!text) return 'Gần đây';
@@ -75,11 +76,7 @@ function checkIsShort(item: any, plTitle?: string) {
   return false;
 }
 
-async function fetchChannelData(channelId: string) {
-  if (cacheData && (Date.now() - lastFetchTime < CACHE_DURATION)) {
-    return cacheData;
-  }
-  
+async function doFetchData(channelId: string) {
   const yt = await getInnertube();
   const channel = await yt.getChannel(channelId);
   const channelTitle = channel.metadata.title;
@@ -202,6 +199,38 @@ async function fetchChannelData(channelId: string) {
   return cacheData;
 }
 
+async function fetchChannelData(channelId: string) {
+  const isExpired = Date.now() - lastFetchTime > CACHE_DURATION;
+  
+  if (cacheData && (!isExpired || isFetchingData)) {
+    // If expired but we are not fetching yet, kick off background fetch
+    if (isExpired && !isFetchingData) {
+      isFetchingData = true;
+      console.log('Cache expired. Starting background fetch...');
+      doFetchData(channelId).then(() => {
+         console.log('Background fetch completed');
+         isFetchingData = false;
+      }).catch(e => {
+         console.error('Background fetch failed:', e);
+         isFetchingData = false;
+      });
+    }
+    return cacheData; // Return immediately (stale-while-revalidate)
+  }
+
+  // If no cache, block and wait
+  isFetchingData = true;
+  try {
+    console.log('No cache found. Blocking fetch started...');
+    const data = await doFetchData(channelId);
+    isFetchingData = false;
+    return data;
+  } catch (e) {
+    isFetchingData = false;
+    throw e;
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -239,6 +268,10 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    
+    // Warm up the cache immediately so horizontal scaling or cold starts feel faster
+    console.log('Pre-warming cache in background...');
+    fetchChannelData('UClxiXO5JjB3k5y3-4OtAzug').catch(console.error);
   });
 }
 
