@@ -237,6 +237,11 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Health check endpoint cho cron-job hoặc UptimeRobot ping
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
   app.get('/api/data', async (req, res) => {
     try {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
