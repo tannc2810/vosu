@@ -7,7 +7,7 @@ async function run() {
   
   const pList = playlistsData.playlists.filter((p: any) => p.content_type === 'PLAYLIST');
   
-  for (const p of pList) {
+  for (const p of pList as any[]) {
      const plId = p.content_id;
      try {
        const pl = await yt.getPlaylist(plId);

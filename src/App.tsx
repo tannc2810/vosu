@@ -12,10 +12,57 @@ export default function App() {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [visitorStats, setVisitorStats] = useState<{
+    totalVisits: number;
+    todayVisits: number;
+    dailyStats: Record<string, number>;
+  } | null>(null);
 
   useEffect(() => {
     fetchData();
+    trackVisitor();
   }, []);
+
+  const trackVisitor = async () => {
+    try {
+      let visitorId = localStorage.getItem('sh_visitor_id');
+      if (!visitorId) {
+        visitorId = 'vis_' + Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+        localStorage.setItem('sh_visitor_id', visitorId);
+      }
+
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+
+      const lastVisitDate = localStorage.getItem('sh_last_visit_date');
+
+      let url = `/api/visit/stats?date=${dateStr}`;
+      let options: RequestInit = { method: 'GET' };
+
+      if (!lastVisitDate || lastVisitDate !== dateStr) {
+        url = '/api/visit';
+        options = {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ visitorId, date: dateStr })
+        };
+      }
+
+      const res = await fetch(url, options);
+      if (res.ok) {
+        const stats = await res.json();
+        setVisitorStats(stats);
+        if (!lastVisitDate || lastVisitDate !== dateStr) {
+          localStorage.setItem('sh_last_visit_date', dateStr);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to track visitor stats:', err);
+    }
+  };
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -230,12 +277,55 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="py-8 md:py-10 px-4 text-center text-saffron-700 text-xs md:text-sm border-t border-saffron-200/50 flex flex-col items-center gap-1.5 md:gap-2">
-        <p>Chớ làm các điều ác (Chư ác mạc tác)</p>
-        <p>Siêng làm các điều lành (Chúng thiện phụng hành)</p>
-        <p>Giữ tâm ý trong sạch (Tự tịnh kỳ ý)</p>
-        <p>Ấy lời chư Phật dạy (Thị chư Phật giáo)</p>
-        <p className="mt-4 font-serif italic text-saffron-800">Kinh Pháp Cú, Số 183. Namo Sakya Muni Buddha!</p>
+      <footer className="py-8 md:py-12 px-4 text-center text-saffron-700 text-xs md:text-sm border-t border-saffron-200/50 flex flex-col items-center gap-4 md:gap-6 bg-saffron-50/30">
+        <div className="flex flex-col items-center gap-1.5 md:gap-2">
+          <p className="font-medium">Chớ làm các điều ác (Chư ác mạc tác)</p>
+          <p className="font-medium">Siêng làm các điều lành (Chúng thiện phụng hành)</p>
+          <p className="font-medium">Giữ tâm ý trong sạch (Tự tịnh kỳ ý)</p>
+          <p className="font-medium">Ấy lời chư Phật dạy (Thị chư Phật giáo)</p>
+          <p className="mt-2 font-serif italic text-saffron-800 text-sm md:text-base">Kinh Pháp Cú, Số 183. Namo Sakya Muni Buddha!</p>
+        </div>
+
+        {/* Thống kê truy cập */}
+        <div className="w-full max-w-md mx-auto pt-4 border-t border-saffron-200/40 flex flex-col items-center gap-3">
+          <div className="grid grid-cols-2 gap-4 w-full max-w-sm px-4">
+            <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 border border-saffron-100 shadow-sm flex flex-col items-center justify-center">
+              <span className="text-[10px] md:text-xs font-semibold uppercase tracking-wider text-saffron-600 mb-1">
+                TỔNG LƯỢT TRUY CẬP
+              </span>
+              <span className="text-lg md:text-xl font-bold font-mono text-saffron-900">
+                {visitorStats ? visitorStats.totalVisits.toLocaleString('vi-VN') : '21.670'}
+              </span>
+            </div>
+            <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 border border-saffron-100 shadow-sm flex flex-col items-center justify-center">
+              <span className="text-[10px] md:text-xs font-semibold uppercase tracking-wider text-saffron-600 mb-1">
+                HÔM NAY
+              </span>
+              <span className="text-lg md:text-xl font-bold font-mono text-saffron-900 flex items-center gap-1.5">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                {visitorStats ? visitorStats.todayVisits.toLocaleString('vi-VN') : '1'}
+              </span>
+            </div>
+          </div>
+
+          {visitorStats && visitorStats.dailyStats && Object.keys(visitorStats.dailyStats).length > 0 && (
+            <div className="text-[10px] md:text-xs text-saffron-600/85 font-mono mt-1 text-center bg-saffron-100/30 px-3 py-1.5 rounded-full border border-saffron-200/30">
+              <span className="font-semibold text-saffron-700/90 mr-1.5 font-sans uppercase tracking-wider">Thống kê ngày:</span>
+              {Object.entries(visitorStats.dailyStats)
+                .sort((a, b) => b[0].localeCompare(a[0]))
+                .slice(0, 5) // Show top 5 recent days
+                .map(([date, count]) => {
+                  const parts = date.split('-');
+                  const formattedDate = parts.length === 3 ? `${parts[2]}/${parts[1]}` : date;
+                  return `${formattedDate}: ${count}`;
+                })
+                .join(' • ')}
+            </div>
+          )}
+        </div>
       </footer>
     </div>
   );

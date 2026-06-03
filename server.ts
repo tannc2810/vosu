@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { Innertube, UniversalCache } from 'youtubei.js';
 
@@ -30,6 +31,36 @@ let cacheData: any = null;
 let lastFetchTime = 0;
 const CACHE_DURATION = 1000 * 60 * 60 * 12; // 12 hours
 let isFetchingData = false;
+
+const CACHE_FILE = path.join(process.cwd(), 'youtube_cache.json');
+
+function loadCache() {
+  try {
+    if (fs.existsSync(CACHE_FILE)) {
+      const raw = fs.readFileSync(CACHE_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.allVideos && parsed.playlists) {
+        cacheData = parsed;
+        const stats = fs.statSync(CACHE_FILE);
+        lastFetchTime = stats.mtimeMs;
+        console.log(`[Cache] Loaded ${parsed.allVideos.length} videos from disk cache. Last modified: ${stats.mtime}`);
+        return true;
+      }
+    }
+  } catch (e) {
+    console.error('[Cache] Failed to load disk cache:', e);
+  }
+  return false;
+}
+
+function saveCache(data: any) {
+  try {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    console.log(`[Cache] Saved ${data.allVideos.length} videos to disk cache.`);
+  } catch (e) {
+    console.error('[Cache] Failed to save disk cache:', e);
+  }
+}
 
 function translateVietnamese(text?: string) {
   if (!text) return 'Gần đây';
@@ -195,6 +226,7 @@ async function doFetchData(channelId: string) {
     allVideos
   };
   lastFetchTime = Date.now();
+  saveCache(cacheData);
   
   return cacheData;
 }
@@ -231,11 +263,109 @@ async function fetchChannelData(channelId: string) {
   }
 }
 
+const VISITS_FILE = path.join(process.cwd(), 'visits.json');
+
+interface VisitsDB {
+  totalVisits: number;
+  dailyStats: Record<string, number>;
+  uniqueTrack: Record<string, string[]>;
+}
+
+function loadVisits(): VisitsDB {
+  try {
+    if (fs.existsSync(VISITS_FILE)) {
+      const data = fs.readFileSync(VISITS_FILE, 'utf-8');
+      const db = JSON.parse(data);
+      return {
+        totalVisits: typeof db.totalVisits === 'number' ? db.totalVisits : 21670,
+        dailyStats: db.dailyStats || {},
+        uniqueTrack: db.uniqueTrack || {}
+      };
+    }
+  } catch (e) {
+    console.error('Failed to read visits database, using defaults:', e);
+  }
+  return {
+    totalVisits: 21670,
+    dailyStats: {},
+    uniqueTrack: {}
+  };
+}
+
+function saveVisits(db: VisitsDB) {
+  try {
+    const activeDates = Object.keys(db.uniqueTrack).sort().slice(-3);
+    const cleanedUniqueTrack: Record<string, string[]> = {};
+    for (const d of activeDates) {
+      cleanedUniqueTrack[d] = db.uniqueTrack[d];
+    }
+    db.uniqueTrack = cleanedUniqueTrack;
+    fs.writeFileSync(VISITS_FILE, JSON.stringify(db, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Failed to save visits database:', e);
+  }
+}
+
 async function startServer() {
+  loadCache();
+
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
+
+  app.post('/api/visit', (req, res) => {
+    try {
+      const { visitorId, date } = req.body;
+      if (!visitorId || !date || typeof visitorId !== 'string' || typeof date !== 'string') {
+        return res.status(400).json({ error: 'Missing visitorId or date' });
+      }
+
+      const db = loadVisits();
+      if (!db.uniqueTrack[date]) {
+        db.uniqueTrack[date] = [];
+      }
+      if (db.dailyStats[date] === undefined) {
+        db.dailyStats[date] = 0;
+      }
+
+      const alreadyTracked = db.uniqueTrack[date].includes(visitorId);
+      if (!alreadyTracked) {
+        db.uniqueTrack[date].push(visitorId);
+        db.totalVisits += 1;
+        db.dailyStats[date] += 1;
+        saveVisits(db);
+      }
+
+      res.json({
+        totalVisits: db.totalVisits,
+        todayVisits: db.dailyStats[date] || 0,
+        dailyStats: db.dailyStats
+      });
+    } catch (e) {
+      console.error('API visit tracking error:', e);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.get('/api/visit/stats', (req, res) => {
+    try {
+      const date = req.query.date as string;
+      if (!date || typeof date !== 'string') {
+        return res.status(400).json({ error: 'Missing date parameter' });
+      }
+
+      const db = loadVisits();
+      res.json({
+        totalVisits: db.totalVisits,
+        todayVisits: db.dailyStats[date] || 0,
+        dailyStats: db.dailyStats
+      });
+    } catch (e) {
+      console.error('API visit stats error:', e);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
 
   // Health check endpoint cho cron-job hoặc UptimeRobot ping
   app.get('/api/health', (req, res) => {
