@@ -64,7 +64,7 @@ function saveCache(data: any) {
 
 function translateVietnamese(text?: string) {
   if (!text) return 'Gần đây';
-  let t = text;
+  let t = text.trim();
   
   // Replace views
   t = t.replace(/views/gi, 'lượt xem');
@@ -72,20 +72,66 @@ function translateVietnamese(text?: string) {
   t = t.replace(/([\d.]+)K /g, '$1N '); // 1.7K -> 1.7N
   t = t.replace(/([\d.]+)M /g, '$1Tr ');
 
-  // Replace time
-  t = t.replace(/seconds? ago/gi, 'giây trước');
-  t = t.replace(/minutes? ago/gi, 'phút trước');
-  t = t.replace(/hours? ago/gi, 'giờ trước');
-  t = t.replace(/days? ago/gi, 'ngày trước');
-  t = t.replace(/weeks? ago/gi, 'tuần trước');
-  t = t.replace(/months? ago/gi, 'tháng trước');
-  t = t.replace(/years? ago/gi, 'năm trước');
+  // Live / Premiere / Streamed status
+  t = t.replace(/Streamed live/gi, 'Phát trực tiếp');
+  t = t.replace(/Streamed/gi, 'Đã phát trực tiếp');
+  t = t.replace(/Premiered/gi, 'Đã công chiếu');
+  t = t.replace(/Premieres/gi, 'Công chiếu');
+  t = t.replace(/Live/gi, 'Trực tiếp');
+
+  // English articles representing "1"
+  t = t.replace(/\ba\s+second\s+ago/gi, '1 giây trước');
+  t = t.replace(/\ba\s+minute\s+ago/gi, '1 phút trước');
+  t = t.replace(/\ban?\s+hour\s+ago/gi, '1 giờ trước');
+  t = t.replace(/\ba\s+day\s+ago/gi, '1 ngày trước');
+  t = t.replace(/\ba\s+week\s+ago/gi, '1 tuần trước');
+  t = t.replace(/\ba\s+month\s+ago/gi, '1 tháng trước');
+  t = t.replace(/\ba\s+year\s+ago/gi, '1 năm trước');
+
+  t = t.replace(/\ba\s+second\b/gi, '1 giây');
+  t = t.replace(/\ba\s+minute\b/gi, '1 phút');
+  t = t.replace(/\ban?\s+hour\b/gi, '1 giờ');
+  t = t.replace(/\ba\s+day\b/gi, '1 ngày');
+  t = t.replace(/\ba\s+week\b/gi, '1 tuần');
+  t = t.replace(/\ba\s+month\b/gi, '1 tháng');
+  t = t.replace(/\ba\s+year\b/gi, '1 năm');
+
+  // Replace time units with 'ago'
+  t = t.replace(/seconds?\s+ago/gi, 'giây trước');
+  t = t.replace(/minutes?\s+ago/gi, 'phút trước');
+  t = t.replace(/hours?\s+ago/gi, 'giờ trước');
+  t = t.replace(/days?\s+ago/gi, 'ngày trước');
+  t = t.replace(/weeks?\s+ago/gi, 'tuần trước');
+  t = t.replace(/months?\s+ago/gi, 'tháng trước');
+  t = t.replace(/years?\s+ago/gi, 'năm trước');
+
+  // Loose replacements just in case
+  t = t.replace(/\byesterday\b/gi, 'Hôm qua');
+  t = t.replace(/\bjust\s+now\b/gi, 'Vừa xong');
+  
+  // Plural/singular fallback replacements
+  t = t.replace(/\bseconds?\b/gi, 'giây');
+  t = t.replace(/\bminutes?\b/gi, 'phút');
+  t = t.replace(/\bhours?\b/gi, 'giờ');
+  t = t.replace(/\bdays?\b/gi, 'ngày');
+  t = t.replace(/\bweeks?\b/gi, 'tuần');
+  t = t.replace(/\bmonths?\b/gi, 'tháng');
+  t = t.replace(/\byears?\b/gi, 'năm');
+  t = t.replace(/\bago\b/gi, 'trước');
 
   // Misc
   t = t.replace(/Updated today/gi, 'Cập nhật hôm nay');
   t = t.replace(/Updated/gi, 'Cập nhật');
 
   return t;
+}
+
+function isExcludedPlaylist(title?: string) {
+  if (!title) return false;
+  const lower = title.toLowerCase();
+  return (lower.includes('musique') && lower.includes('thong nguyen')) || 
+         lower.includes('musique — thong nguyen') || 
+         lower.includes('musique - thong nguyen');
 }
 
 function checkIsShort(item: any, plTitle?: string) {
@@ -127,6 +173,11 @@ async function doFetchData(channelId: string) {
       for (const p of pList) {
         const plId = p.content_id;
         const plTitle = p.metadata?.title?.text || p.title?.text || 'Untitled';
+        
+        if (isExcludedPlaylist(plTitle)) {
+          console.log(`[Filter] Skipping excluded playlist: ${plTitle}`);
+          continue;
+        }
         
         let videos = [];
         try {
@@ -380,7 +431,31 @@ async function startServer() {
       
       const channelId = req.query.channelId || 'UClxiXO5JjB3k5y3-4OtAzug';
       const data = await fetchChannelData(channelId as string);
-      res.json(data);
+      
+      if (data && data.playlists) {
+        const filteredPlaylists = data.playlists.filter((p: any) => !isExcludedPlaylist(p.title));
+        
+        // Gather and cache IDs of videos belonging to valid/included playlists
+        const goodVideoIds = new Set();
+        filteredPlaylists.forEach((pl: any) => {
+          if (pl.videos) {
+            pl.videos.forEach((v: any) => goodVideoIds.add(v.id));
+          }
+        });
+        
+        // Only output videos that are shorts or belong to valid playlists
+        const filteredAllVideos = data.allVideos
+          ? data.allVideos.filter((v: any) => v.isShort || goodVideoIds.has(v.id))
+          : [];
+          
+        res.json({
+          ...data,
+          playlists: filteredPlaylists,
+          allVideos: filteredAllVideos
+        });
+      } else {
+        res.json(data);
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
       res.status(500).json({ error: 'Không thể tải video, vui lòng thử lại sau.' });
