@@ -12,16 +12,54 @@ export default function App() {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [localSearchQuery, setLocalSearchQuery] = useState('');
   const [visitorStats, setVisitorStats] = useState<{
     totalVisits: number;
     todayVisits: number;
-    dailyStats: Record<string, number>;
+    onlineCount?: number;
+    dailyStats?: Record<string, number>;
   } | null>(null);
+
+  // Debounce the search input to eliminate typing lag
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(localSearchQuery);
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [localSearchQuery]);
 
   useEffect(() => {
     fetchData();
     trackVisitor();
+
+    // Periodic ping to keep session alive and retrieve real-time stats
+    const interval = setInterval(() => {
+      pingStats();
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
   }, []);
+
+  const pingStats = async () => {
+    try {
+      const visitorId = localStorage.getItem('sh_visitor_id');
+      if (!visitorId) return;
+
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+
+      const res = await fetch(`/api/visit/stats?date=${dateStr}&visitorId=${visitorId}`);
+      if (res.ok) {
+        const stats = await res.json();
+        setVisitorStats(stats);
+      }
+    } catch (err) {
+      console.error('Failed to ping stats:', err);
+    }
+  };
 
   const trackVisitor = async () => {
     try {
@@ -39,7 +77,7 @@ export default function App() {
 
       const lastVisitDate = localStorage.getItem('sh_last_visit_date');
 
-      let url = `/api/visit/stats?date=${dateStr}`;
+      let url = `/api/visit/stats?date=${dateStr}&visitorId=${visitorId}`;
       let options: RequestInit = { method: 'GET' };
 
       if (!lastVisitDate || lastVisitDate !== dateStr) {
@@ -94,61 +132,53 @@ export default function App() {
       filtered = playlist && playlist.videos ? playlist.videos : [];
     }
 
-    if (searchQuery.trim()) {
+    const query = searchQuery.trim();
+    if (query) {
       const normalizeText = (text: string) => {
         return text
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
           .replace(/đ/g, 'd')
-          .replace(/Đ/g, 'D')
-          .toLowerCase();
+          .replace(/Đ/g, 'd')
+          .replace(/[^a-z0-9\s]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
       };
+
+      const normalizedQuery = normalizeText(query);
+      const queryTokens = normalizedQuery.split(' ').filter(Boolean);
       
-      const queryStr = normalizeText(searchQuery).replace(/\s+/g, ' ').trim();
-      
-      const normalizeTokens = (str: string) => {
-        return str
-          .replace(/([a-z])([0-9])/g, '$1 $2')
-          .replace(/([0-9])([a-z])/g, '$1 $2')
-          .replace(/[^a-z0-9]/g, ' ')
-          .split(' ')
-          .filter(Boolean);
-      };
-      
-      const queryTokens = normalizeTokens(queryStr);
+      if (queryTokens.length === 0) return filtered;
 
       const scoredItems = filtered.map(v => {
         const titleNormalized = normalizeText(v.title);
-        const titleTokens = normalizeTokens(titleNormalized);
         
+        let allTokensMatched = true;
         let score = 0;
-        let allTokensMatch = true;
-
-        if (titleNormalized.replace(/\s+/g, ' ').includes(queryStr)) {
-          score += 1000;
-        }
 
         for (const token of queryTokens) {
-          const isDigit = /^\d+$/.test(token);
-          const parsedDigit = isDigit ? parseInt(token, 10) : null;
-          
-          if (titleTokens.includes(token)) {
-            // Khớp chính xác hoàn toàn từ
-            score += 10;
-          } else if (isDigit && titleTokens.some(t => /^\d+$/.test(t) && parseInt(t, 10) === parsedDigit)) {
-            // Khớp chính xác giá trị số (ví dụ "1" khớp "01")
-            score += 10;
-          } else if (!isDigit && titleTokens.some(t => t.includes(token))) {
-            // Khớp 1 phần CỦA CHỮ (ví dụ "kin" ra "kinh")
-            score += 3;
-          } else {
-            // Tìm số "1" sẽ loại bỏ những số như "315", không khớp một phần với số!
-            allTokensMatch = false;
+          if (!titleNormalized.includes(token)) {
+            allTokensMatched = false;
             break;
           }
         }
 
-        return { video: v, score: allTokensMatch ? score : 0 };
+        if (allTokensMatched) {
+          score += 1000;
+          // Exact text match priority boost
+          if (titleNormalized.includes(normalizedQuery)) {
+            score += 5000;
+          }
+          // Starts with query boost
+          if (titleNormalized.startsWith(normalizedQuery)) {
+            score += 2000;
+          }
+          // Length penalty to prefer cleaner/shorter titles first
+          score -= titleNormalized.length * 0.1;
+        }
+
+        return { video: v, score };
       });
 
       filtered = scoredItems
@@ -245,8 +275,8 @@ export default function App() {
                   id="search-input"
                   type="text"
                   placeholder="Tìm kiếm video..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  value={localSearchQuery}
+                  onChange={(e) => setLocalSearchQuery(e.target.value)}
                   className="w-full pl-11 pr-4 py-2.5 text-sm md:text-base bg-white rounded-xl outline-none focus:ring-2 focus:ring-saffron-500 border border-saffron-200 transition-all shadow-sm"
                 />
               </div>
@@ -287,44 +317,37 @@ export default function App() {
         </div>
 
         {/* Thống kê truy cập */}
-        <div className="w-full max-w-md mx-auto pt-4 border-t border-saffron-200/40 flex flex-col items-center gap-3">
-          <div className="grid grid-cols-2 gap-4 w-full max-w-sm px-4">
+        <div className="w-full max-w-lg mx-auto pt-4 border-t border-saffron-200/40 flex flex-col items-center gap-3">
+          <div className="grid grid-cols-3 gap-3 md:gap-4 w-full px-2 sm:px-4">
             <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 border border-saffron-100 shadow-sm flex flex-col items-center justify-center">
-              <span className="text-[10px] md:text-xs font-semibold uppercase tracking-wider text-saffron-600 mb-1">
-                TỔNG LƯỢT TRUY CẬP
+              <span className="text-[9px] md:text-xs font-semibold uppercase tracking-wider text-saffron-600 mb-1 text-center leading-tight">
+                TỔNG TRUY CẬP
               </span>
-              <span className="text-lg md:text-xl font-bold font-mono text-saffron-900">
+              <span className="text-base md:text-lg font-bold font-mono text-saffron-900">
                 {visitorStats ? visitorStats.totalVisits.toLocaleString('vi-VN') : '21.670'}
               </span>
             </div>
             <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 border border-saffron-100 shadow-sm flex flex-col items-center justify-center">
-              <span className="text-[10px] md:text-xs font-semibold uppercase tracking-wider text-saffron-600 mb-1">
-                HÔM NAY
+              <span className="text-[9px] md:text-xs font-semibold uppercase tracking-wider text-saffron-600 mb-1 text-center leading-tight">
+                ĐANG ONLINE
               </span>
-              <span className="text-lg md:text-xl font-bold font-mono text-saffron-900 flex items-center gap-1.5">
+              <span className="text-base md:text-lg font-bold font-mono text-saffron-900 flex items-center gap-1">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                 </span>
+                {visitorStats ? (visitorStats.onlineCount || 1).toLocaleString('vi-VN') : '1'}
+              </span>
+            </div>
+            <div className="bg-white/60 backdrop-blur-sm rounded-xl p-3 border border-saffron-100 shadow-sm flex flex-col items-center justify-center">
+              <span className="text-[9px] md:text-xs font-semibold uppercase tracking-wider text-saffron-600 mb-1 text-center leading-tight">
+                HÔM NAY
+              </span>
+              <span className="text-base md:text-lg font-bold font-mono text-saffron-900">
                 {visitorStats ? visitorStats.todayVisits.toLocaleString('vi-VN') : '1'}
               </span>
             </div>
           </div>
-
-          {visitorStats && visitorStats.dailyStats && Object.keys(visitorStats.dailyStats).length > 0 && (
-            <div className="text-[10px] md:text-xs text-saffron-600/85 font-mono mt-1 text-center bg-saffron-100/30 px-3 py-1.5 rounded-full border border-saffron-200/30">
-              <span className="font-semibold text-saffron-700/90 mr-1.5 font-sans uppercase tracking-wider">Thống kê ngày:</span>
-              {Object.entries(visitorStats.dailyStats)
-                .sort((a, b) => b[0].localeCompare(a[0]))
-                .slice(0, 5) // Show top 5 recent days
-                .map(([date, count]) => {
-                  const parts = date.split('-');
-                  const formattedDate = parts.length === 3 ? `${parts[2]}/${parts[1]}` : date;
-                  return `${formattedDate}: ${count}`;
-                })
-                .join(' • ')}
-            </div>
-          )}
         </div>
       </footer>
     </div>

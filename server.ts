@@ -343,6 +343,26 @@ function loadVisits(): VisitsDB {
   };
 }
 
+const activeSessions = new Map<string, number>();
+
+function recordActivity(visitorId: string) {
+  if (visitorId && typeof visitorId === 'string') {
+    activeSessions.set(visitorId, Date.now());
+  }
+}
+
+function getOnlineCount(): number {
+  const now = Date.now();
+  // Clean up sessions older than 5 minutes (300,000 ms)
+  for (const [vId, timestamp] of activeSessions.entries()) {
+    if (now - timestamp > 5 * 60 * 1000) {
+      activeSessions.delete(vId);
+    }
+  }
+  // Ensure we show at least 1 online session (for the current connecting user)
+  return Math.max(1, activeSessions.size);
+}
+
 function saveVisits(db: VisitsDB) {
   try {
     const activeDates = Object.keys(db.uniqueTrack).sort().slice(-3);
@@ -372,6 +392,8 @@ async function startServer() {
         return res.status(400).json({ error: 'Missing visitorId or date' });
       }
 
+      recordActivity(visitorId);
+
       const db = loadVisits();
       if (!db.uniqueTrack[date]) {
         db.uniqueTrack[date] = [];
@@ -391,6 +413,7 @@ async function startServer() {
       res.json({
         totalVisits: db.totalVisits,
         todayVisits: db.dailyStats[date] || 0,
+        onlineCount: getOnlineCount(),
         dailyStats: db.dailyStats
       });
     } catch (e) {
@@ -402,14 +425,20 @@ async function startServer() {
   app.get('/api/visit/stats', (req, res) => {
     try {
       const date = req.query.date as string;
+      const visitorId = req.query.visitorId as string;
       if (!date || typeof date !== 'string') {
         return res.status(400).json({ error: 'Missing date parameter' });
+      }
+
+      if (visitorId) {
+        recordActivity(visitorId);
       }
 
       const db = loadVisits();
       res.json({
         totalVisits: db.totalVisits,
         todayVisits: db.dailyStats[date] || 0,
+        onlineCount: getOnlineCount(),
         dailyStats: db.dailyStats
       });
     } catch (e) {
