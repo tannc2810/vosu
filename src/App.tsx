@@ -151,32 +151,88 @@ export default function App() {
       
       if (queryTokens.length === 0) return filtered;
 
+      // Separate query tokens into pure numbers vs alphabet words
+      const numberTokens: string[] = [];
+      const wordTokens: string[] = [];
+
+      for (const token of queryTokens) {
+        if (/^\d+$/.test(token)) {
+          numberTokens.push(token);
+        } else {
+          wordTokens.push(token);
+        }
+      }
+
       const scoredItems = filtered.map(v => {
         const titleNormalized = normalizeText(v.title);
         
-        let allTokensMatched = true;
-        let score = 0;
+        let allMatched = true;
 
-        for (const token of queryTokens) {
-          if (!titleNormalized.includes(token)) {
-            allTokensMatched = false;
+        // 1. Strict number matching: number tokens must exist as isolated numbers
+        // e.g., if query has "3", it should not pass "310", but matches "3" or "03"
+        for (const numToken of numberTokens) {
+          const reg = new RegExp('(?<!\\d)' + numToken + '(?!\\d)');
+          if (!reg.test(titleNormalized)) {
+            allMatched = false;
             break;
           }
         }
 
-        if (allTokensMatched) {
-          score += 1000;
-          // Exact text match priority boost
-          if (titleNormalized.includes(normalizedQuery)) {
-            score += 5000;
+        if (!allMatched) return { video: v, score: 0 };
+
+        // 2. Word tokens must be contained as substrings
+        for (const wordToken of wordTokens) {
+          if (!titleNormalized.includes(wordToken)) {
+            allMatched = false;
+            break;
           }
-          // Starts with query boost
-          if (titleNormalized.startsWith(normalizedQuery)) {
-            score += 2000;
-          }
-          // Length penalty to prefer cleaner/shorter titles first
-          score -= titleNormalized.length * 0.1;
         }
+
+        if (!allMatched) return { video: v, score: 0 };
+
+        // 3. Math scoring for sorting matches perfectly
+        let score = 1000;
+
+        // Big boost for exact phrase sequence inside the title
+        if (titleNormalized.includes(normalizedQuery)) {
+          score += 10000;
+        }
+
+        // Boost for starting with the query
+        if (titleNormalized.startsWith(normalizedQuery)) {
+          score += 5000;
+        }
+
+        // Whole-word match boosts for word tokens to prioritize full words over parts of words
+        for (const wordToken of wordTokens) {
+          const regWord = new RegExp('\\b' + wordToken + '\\b');
+          if (regWord.test(titleNormalized)) {
+            score += 1200;
+          }
+        }
+
+        // Relational order check (matches in correct left-to-right order)
+        let lastIdx = -1;
+        let termsInOrder = true;
+        for (const token of queryTokens) {
+          const idx = titleNormalized.indexOf(token);
+          if (idx < lastIdx) {
+            termsInOrder = false;
+          }
+          lastIdx = idx;
+        }
+        if (termsInOrder) {
+          score += 2500;
+        }
+
+        // Position of the first matched term boost (earlier is better)
+        const firstMatchIndex = titleNormalized.indexOf(queryTokens[0]);
+        if (firstMatchIndex !== -1) {
+          score += Math.max(0, 100 - firstMatchIndex) * 15;
+        }
+
+        // Short title specificity bonus
+        score -= titleNormalized.length * 0.4;
 
         return { video: v, score };
       });

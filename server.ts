@@ -327,8 +327,9 @@ function loadVisits(): VisitsDB {
     if (fs.existsSync(VISITS_FILE)) {
       const data = fs.readFileSync(VISITS_FILE, 'utf-8');
       const db = JSON.parse(data);
+      const total = typeof db.totalVisits === 'number' ? db.totalVisits : 21789;
       return {
-        totalVisits: typeof db.totalVisits === 'number' ? db.totalVisits : 21670,
+        totalVisits: Math.max(total, 21789),
         dailyStats: db.dailyStats || {},
         uniqueTrack: db.uniqueTrack || {}
       };
@@ -337,7 +338,7 @@ function loadVisits(): VisitsDB {
     console.error('Failed to read visits database, using defaults:', e);
   }
   return {
-    totalVisits: 21670,
+    totalVisits: 21789,
     dailyStats: {},
     uniqueTrack: {}
   };
