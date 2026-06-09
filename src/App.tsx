@@ -6,6 +6,20 @@ import { VideoCard } from './components/VideoCard';
 
 const CHANNEL_ID = 'UClxiXO5JjB3k5y3-4OtAzug';
 
+function cleanStringValue(val: any): string {
+  if (!val) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object') {
+    if (typeof val.content === 'string') return val.content;
+    if (typeof val.text === 'string') return val.text;
+    if (Array.isArray(val.runs)) {
+      return val.runs.map((r: any) => typeof r === 'string' ? r : (r?.text || '')).join('');
+    }
+    return val.content || val.text || (typeof val.toString === 'function' ? val.toString() : '') || 'Untitled';
+  }
+  return String(val);
+}
+
 export default function App() {
   const [data, setData] = useState<YouTubeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -111,6 +125,37 @@ export default function App() {
       
       if (!res.ok) {
         throw new Error(result.error || 'Failed to fetch videos');
+      }
+
+      if (result) {
+        if (result.channelTitle) {
+          result.channelTitle = cleanStringValue(result.channelTitle);
+        }
+        if (Array.isArray(result.allVideos)) {
+          result.allVideos.forEach(v => {
+            if (v) {
+              v.title = cleanStringValue(v.title);
+              v.author = cleanStringValue(v.author);
+              v.published = cleanStringValue(v.published);
+            }
+          });
+        }
+        if (Array.isArray(result.playlists)) {
+          result.playlists.forEach(pl => {
+            if (pl) {
+              pl.title = cleanStringValue(pl.title);
+              if (Array.isArray(pl.videos)) {
+                pl.videos.forEach(v => {
+                  if (v) {
+                    v.title = cleanStringValue(v.title);
+                    v.author = cleanStringValue(v.author);
+                    v.published = cleanStringValue(v.published);
+                  }
+                });
+              }
+            }
+          });
+        }
       }
 
       setData(result);

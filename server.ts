@@ -34,15 +34,68 @@ let isFetchingData = false;
 
 const CACHE_FILE = path.join(process.cwd(), 'youtube_cache.json');
 
+function cleanText(text: any): string {
+  if (!text) return '';
+  if (typeof text === 'string') return text;
+  if (typeof text === 'object') {
+    if (typeof text.content === 'string') return text.content;
+    if (typeof text.text === 'string') return text.text;
+    if (Array.isArray(text.runs)) {
+      return text.runs.map((r: any) => typeof r === 'string' ? r : (r?.text || '')).join('');
+    }
+  }
+  return typeof text.toString === 'function' ? text.toString() : 'Untitled';
+}
+
 function loadCache() {
   try {
     if (fs.existsSync(CACHE_FILE)) {
       const raw = fs.readFileSync(CACHE_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
       if (parsed && parsed.allVideos && parsed.playlists) {
+        // Self-heal loaded cache from any historical object-wrapped titles/authors
+        if (parsed.channelTitle) {
+          parsed.channelTitle = cleanText(parsed.channelTitle);
+        }
+        if (Array.isArray(parsed.allVideos)) {
+          parsed.allVideos.forEach((v: any) => {
+            if (v) {
+              v.title = cleanText(v.title);
+              v.author = cleanText(v.author);
+            }
+          });
+        }
+        if (Array.isArray(parsed.playlists)) {
+          parsed.playlists.forEach((pl: any) => {
+            if (pl) {
+              pl.title = cleanText(pl.title);
+              if (Array.isArray(pl.videos)) {
+                pl.videos.forEach((v: any) => {
+                  if (v) {
+                    v.title = cleanText(v.title);
+                    v.author = cleanText(v.author);
+                  }
+                });
+              }
+            }
+          });
+        }
+
         cacheData = parsed;
         const stats = fs.statSync(CACHE_FILE);
-        lastFetchTime = stats.mtimeMs;
+        
+        // Self-healing check: if the cache was truncated (e.g., any major playlist is capped at exactly 100) or total videos count is too low,
+        // trigger a complete re-fetch in background immediately on startup to build the full repository.
+        const largestPlaylistLength = Math.max(...parsed.playlists.map((pl: any) => pl.videos?.length || 0));
+        const isTruncated = largestPlaylistLength === 100 || parsed.allVideos.length < 350;
+        
+        if (isTruncated) {
+          lastFetchTime = 0;
+          console.log(`[Cache] Truncated or incomplete cache detected (Max playlist size: ${largestPlaylistLength}, Total: ${parsed.allVideos.length} videos). Forcing full compilation update.`);
+        } else {
+          lastFetchTime = stats.mtimeMs;
+        }
+
         console.log(`[Cache] Loaded ${parsed.allVideos.length} videos from disk cache. Last modified: ${stats.mtime}`);
         return true;
       }
@@ -128,10 +181,10 @@ function translateVietnamese(text?: string) {
 
 function isExcludedPlaylist(title?: string) {
   if (!title) return false;
-  const lower = title.toLowerCase();
-  return (lower.includes('musique') && lower.includes('thong nguyen')) || 
-         lower.includes('musique — thong nguyen') || 
-         lower.includes('musique - thong nguyen');
+  const lower = title.toLowerCase().trim();
+  return lower.includes('musique') || 
+         lower.includes('thong nguyen') || 
+         lower.includes('thông nguyễn');
 }
 
 function checkIsShort(item: any, plTitle?: string) {
@@ -156,7 +209,7 @@ function checkIsShort(item: any, plTitle?: string) {
 async function doFetchData(channelId: string) {
   const yt = await getInnertube();
   const channel = await yt.getChannel(channelId);
-  const channelTitle = channel.metadata.title;
+  const channelTitle = cleanText(channel.metadata.title);
 
   let allVideosMap = new Map();
   let playlistsResult = [];
@@ -167,24 +220,82 @@ async function doFetchData(channelId: string) {
     channel.getShorts().catch(e => { console.error("Error fetching shorts:", e); return null; })
   ]);
 
+  let pList: any[] = [];
   if (playlistsData?.playlists) {
-    const pList = playlistsData.playlists.filter((p: any) => p.content_type === 'PLAYLIST');
-        playlistsResult = [];
-      for (const p of pList) {
-        const plId = p.content_id;
-        const plTitle = p.metadata?.title?.text || p.title?.text || 'Untitled';
-        
-        if (isExcludedPlaylist(plTitle)) {
-          console.log(`[Filter] Skipping excluded playlist: ${plTitle}`);
-          continue;
+    pList = [...playlistsData.playlists];
+    let currentFeed = playlistsData;
+    while (currentFeed?.has_continuation) {
+      try {
+        console.log('[YouTube] Fetching playlists continuation page...');
+        currentFeed = await currentFeed.getContinuation();
+        if (currentFeed?.playlists) {
+          pList.push(...currentFeed.playlists);
+        } else if (currentFeed?.items) {
+          pList.push(...currentFeed.items);
         }
-        
-        let videos = [];
-        try {
-          const pl = await yt.getPlaylist(plId);
-          videos = pl.items.map((item: any) => {
-            const id = item.id || item.video_id || (item.on_tap_endpoint?.payload?.videoId);
-            const title = item.title?.text || item.overlay_metadata?.primary_text?.text || 'Untitled';
+      } catch (ce) {
+        console.error('[YouTube] Failed to fetch playlists continuation:', ce);
+        break;
+      }
+    }
+  }
+
+  const seenPlaylistIds = new Set<string>();
+
+  // Diagnostic deep search token helpers and recursive video extractor
+  const findVideoId = (obj: any): string | null => {
+    if (!obj || typeof obj !== 'object') return null;
+    if (obj.videoId && typeof obj.videoId === 'string') return obj.videoId;
+    if (obj.video_id && typeof obj.video_id === 'string') return obj.video_id;
+    if (obj.content_id && obj.content_type === 'VIDEO') return obj.content_id;
+    for (const k of Object.keys(obj)) {
+      const res = findVideoId(obj[k]);
+      if (res) return res;
+    }
+    return null;
+  };
+
+  const scanForToken = (obj: any): string | null => {
+    if (!obj || typeof obj !== 'object') return null;
+    if (obj.token && typeof obj.token === 'string' && (obj.token.startsWith('4qmF') || obj.token.includes('VLPL'))) {
+      return obj.token;
+    }
+    if (obj.continuationToken && typeof obj.continuationToken === 'string') {
+      return obj.continuationToken;
+    }
+    for (const key of Object.keys(obj)) {
+      const res = scanForToken(obj[key]);
+      if (res) return res;
+    }
+    return null;
+  };
+
+  if (pList.length > 0) {
+    playlistsResult = [];
+    for (const p of pList) {
+      const plId = p.content_id || p.id;
+      if (!plId) continue;
+      if (seenPlaylistIds.has(plId)) continue;
+      seenPlaylistIds.add(plId);
+
+      const plTitle = cleanText(p.metadata?.title?.text || p.title?.text || p.title || 'Untitled');
+      
+      if (isExcludedPlaylist(plTitle)) {
+        console.log(`[Filter] Skipping excluded playlist: ${plTitle}`);
+        continue;
+      }
+      
+      let videos: any[] = [];
+      try {
+        console.log(`[YouTube] Fetching playlist ${plTitle} (ID: ${plId})...`);
+        const pl = await yt.getPlaylist(plId);
+
+        // 1. Process pl.items if present (old youtubei.js structure)
+        if (pl?.items && pl.items.length > 0) {
+          for (const item of pl.items) {
+            const id = item.id || item.video_id || item.on_tap_endpoint?.payload?.videoId;
+            if (!id) continue;
+            const title = cleanText(item.title?.text || item.title || item.overlay_metadata?.primary_text?.text || 'Untitled');
             const thumbnail = item.thumbnails?.[0]?.url || item.thumbnail?.[0]?.url || item.on_tap_endpoint?.payload?.thumbnail?.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
             
             let published = item.published?.text || item.overlay_metadata?.secondary_text?.text;
@@ -193,8 +304,8 @@ async function doFetchData(channelId: string) {
             } else if (!published && item.video_info?.text) {
                published = item.video_info.text.split('•').pop()?.trim();
             }
-            
-            return {
+
+            videos.push({
               id,
               title,
               link: `https://www.youtube.com/watch?v=${id}`,
@@ -203,37 +314,363 @@ async function doFetchData(channelId: string) {
               published: translateVietnamese(published),
               duration: item.duration?.text || '',
               isShort: checkIsShort(item, plTitle)
-            };
-          });
-        } catch (e) {
-          console.error(`Failed to fetch playlist ${plId}`, e);
+            });
+          }
         }
 
-        // Replace and deduplicate videos
-        videos = videos.map((v: any) => {
-          if (!allVideosMap.has(v.id)) {
-            allVideosMap.set(v.id, v);
-            return v;
-          }
-          return allVideosMap.get(v.id);
-        });
+        // 2. Scan pl.page_contents recursively for LockupViews to support YouTube new layout
+        if (pl?.page_contents) {
+          const lockups: any[] = [];
+          
+          const scan = (obj: any) => {
+            if (!obj || typeof obj !== 'object') return;
+            if (obj.type === 'LockupView' || (obj.content_id && obj.content_type === 'VIDEO')) {
+              lockups.push(obj);
+              return;
+            }
+            if (obj.lockupViewModel) {
+              lockups.push(obj.lockupViewModel);
+              return;
+            }
+            for (const key of Object.keys(obj)) {
+              scan(obj[key]);
+            }
+          };
 
-        playlistsResult.push({
-          id: plId,
-          title: plTitle,
-          videos
-        });
+          scan(pl.page_contents);
+
+          for (const item of lockups) {
+            const id = findVideoId(item);
+            if (!id) continue;
+
+            // Deduplicate if already processed
+            if (videos.some((v: any) => v.id === id)) continue;
+
+            let title = cleanText(item.metadata?.lockupMetadataViewModel?.title || item.metadata?.title?.text || item.metadata?.title?.runs?.[0]?.text);
+            if (!title && item.renderer_context?.accessibility_context?.label) {
+              const label = item.renderer_context.accessibility_context.label;
+              if (label.includes('|')) {
+                title = label.split('|')[0].trim();
+              } else {
+                title = label;
+              }
+            }
+            if (!title) title = 'Untitled';
+
+            const thumbnail = item.contentImage?.thumbnailViewModel?.image?.sources?.[0]?.url || item.content_image?.image?.[0]?.url || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+            
+            // Extract duration from overlays
+            let duration = '';
+            if (item.contentImage?.thumbnailViewModel?.overlays) {
+              for (const ov of item.contentImage.thumbnailViewModel.overlays) {
+                const badgeText = ov.thumbnailBottomOverlayViewModel?.badges?.[0]?.thumbnailBadgeViewModel?.text;
+                if (badgeText) {
+                  duration = badgeText;
+                  break;
+                }
+              }
+            } else if (item.content_image?.overlays) {
+              for (const ov of item.content_image.overlays) {
+                if (ov.type === 'ThumbnailBottomOverlayView' && ov.badges?.[0]?.text) {
+                  duration = ov.badges[0].text;
+                  break;
+                }
+              }
+            }
+
+            // Extract date from metadata
+            let published = 'Gần đây';
+            if (item.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows) {
+              const rows = item.metadata.lockupMetadataViewModel.metadata.contentMetadataViewModel.metadataRows;
+              for (const row of rows) {
+                if (row.metadataParts) {
+                  for (const part of row.metadataParts) {
+                    const txt = part.text;
+                    if (txt && typeof txt === 'string') {
+                      const lTxt = txt.toLowerCase();
+                      if (
+                        lTxt.includes('ago') || 
+                        lTxt.includes('trước') || 
+                        lTxt.includes('ngày') || 
+                        lTxt.includes('tháng') || 
+                        lTxt.includes('giờ') || 
+                        lTxt.includes('năm') ||
+                        lTxt.includes('giây') ||
+                        lTxt.includes('phút') ||
+                        lTxt.includes('yesterday') ||
+                        lTxt.includes('today')
+                      ) {
+                        published = translateVietnamese(txt);
+                      }
+                    }
+                  }
+                }
+              }
+            } else if (item.metadata?.metadata?.metadata_rows) {
+              for (const row of item.metadata.metadata.metadata_rows) {
+                if (row.metadata_parts) {
+                  for (const part of row.metadata_parts) {
+                    const txt = part.text?.text;
+                    if (txt) {
+                      const lTxt = txt.toLowerCase();
+                      if (
+                        lTxt.includes('ago') || 
+                        lTxt.includes('trước') || 
+                        lTxt.includes('ngày') || 
+                        lTxt.includes('tháng') || 
+                        lTxt.includes('giờ') || 
+                        lTxt.includes('năm') ||
+                        lTxt.includes('giây') ||
+                        lTxt.includes('phút') ||
+                        lTxt.includes('yesterday') ||
+                        lTxt.includes('today')
+                      ) {
+                        published = translateVietnamese(txt);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            videos.push({
+              id,
+              title,
+              link: `https://www.youtube.com/watch?v=${id}`,
+              thumbnail,
+              author: channelTitle,
+              published,
+              duration,
+              isShort: checkIsShort(item, plTitle)
+            });
+          }
+        }
+
+        // 3. CONTINUOUS PAGINATION FOR PLAYLIST (CRUCIAL):
+        // Pull every single page of continuation items for this playlist
+        let currentToken = scanForToken(pl.page_contents);
+        let plPageCount = 1;
+        const maxPlaylistPages = 15; // Safe threshold
+
+        while (currentToken && plPageCount < maxPlaylistPages) {
+          try {
+            console.log(`[YouTube] Fetching playlist ${plTitle} continuation page ${plPageCount}...`);
+            const res = await yt.actions.execute('/browse', { continuation: currentToken });
+            
+            const continuationLockups: any[] = [];
+            const scanForLockups = (obj: any) => {
+              if (!obj || typeof obj !== 'object') return;
+              if (obj.lockupViewModel) {
+                continuationLockups.push(obj.lockupViewModel);
+              }
+              for (const k of Object.keys(obj)) {
+                scanForLockups(obj[k]);
+              }
+            };
+            
+            scanForLockups(res.data);
+            console.log(`[YouTube] Playlist ${plTitle} continuation page ${plPageCount} retrieved ${continuationLockups.length} videos.`);
+            
+            if (continuationLockups.length === 0) {
+              break;
+            }
+
+            for (const item of continuationLockups) {
+              const id = findVideoId(item);
+              if (!id) continue;
+              if (videos.some((v: any) => v.id === id)) continue;
+
+              const title = cleanText(item.metadata?.lockupMetadataViewModel?.title || 'Untitled');
+              const thumbnail = item.contentImage?.thumbnailViewModel?.image?.sources?.[0]?.url || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+              
+              let duration = '';
+              const overlays = item.contentImage?.thumbnailViewModel?.overlays;
+              if (overlays) {
+                for (const ov of overlays) {
+                  const badgeText = ov.thumbnailBottomOverlayViewModel?.badges?.[0]?.thumbnailBadgeViewModel?.text;
+                  if (badgeText) {
+                    duration = badgeText;
+                    break;
+                  }
+                }
+              }
+
+              let published = 'Gần đây';
+              if (item.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows) {
+                const rows = item.metadata.lockupMetadataViewModel.metadata.contentMetadataViewModel.metadataRows;
+                for (const row of rows) {
+                  if (row.metadataParts) {
+                    for (const part of row.metadataParts) {
+                      const txt = part.text;
+                      if (txt && typeof txt === 'string') {
+                        const lTxt = txt.toLowerCase();
+                        if (
+                          lTxt.includes('ago') || 
+                          lTxt.includes('trước') || 
+                          lTxt.includes('ngày') || 
+                          lTxt.includes('tháng') || 
+                          lTxt.includes('giờ') || 
+                          lTxt.includes('năm') ||
+                          lTxt.includes('giây') ||
+                          lTxt.includes('phút') ||
+                          lTxt.includes('yesterday') ||
+                          lTxt.includes('today')
+                        ) {
+                          published = translateVietnamese(txt);
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+
+              videos.push({
+                id,
+                title,
+                link: `https://www.youtube.com/watch?v=${id}`,
+                thumbnail,
+                author: channelTitle,
+                published,
+                duration,
+                isShort: checkIsShort(item, plTitle)
+              });
+            }
+
+            const nextToken = scanForToken(res.data);
+            if (!nextToken || nextToken === currentToken) {
+              break;
+            }
+            currentToken = nextToken;
+            plPageCount++;
+          } catch (err) {
+            console.error(`[YouTube] Error fetching playlist ${plTitle} (ID: ${plId}) continuation:`, err);
+            break;
+          }
+        }
+        
+        console.log(`[YouTube] Successfully compiled ${videos.length} total videos for playlist: "${plTitle}"`);
+
+      } catch (e) {
+        console.error(`Failed to fetch playlist ${plId}`, e);
       }
+
+      // Replace and deduplicate videos
+      videos = videos.map((v: any) => {
+        if (!allVideosMap.has(v.id)) {
+          allVideosMap.set(v.id, v);
+          return v;
+        }
+        return allVideosMap.get(v.id);
+      });
+
+      playlistsResult.push({
+        id: plId,
+        title: plTitle,
+        videos
+      });
+    }
   }
 
-  // Process Shorts for the All tab
+  // 4. Compact search queries compilation (fallback layer)
+  console.log('[YouTube] Starting deep search channel compilation to index all videos...');
+  const searchQueries = ['pháp cú', 'lời vàng', 'nhịp pháp cú'];
+  const compiledSearchVideos: any[] = [];
+
+  for (const q of searchQueries) {
+    try {
+      console.log(`[YouTube] Compile search on channel for "${q}"...`);
+      let results = await channel.search(q);
+      let pageVideos = results.videos || [];
+      
+      const processSearchResult = (vList: any[]) => {
+        for (const v of vList) {
+          if (!v.id) continue;
+          
+          const id = v.id;
+          const title = cleanText(v.title || 'Untitled');
+          const thumbnail = v.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+          const published = translateVietnamese(v.published?.toString() || 'Gần đây');
+          const duration = v.duration?.toString() || '';
+          
+          const isShort = title.toLowerCase().includes('bài kệ số') || 
+                          title.toLowerCase().includes('#shorts') || 
+                          title.toLowerCase().includes('pháp cú') ||
+                          (duration.includes(':') && parseInt(duration.split(':')[0]) === 0 && parseInt(duration.split(':')[1]) <= 65);
+
+          const videoObj = {
+            id,
+            title,
+            link: `https://www.youtube.com/watch?v=${id}`,
+            thumbnail,
+            author: channelTitle,
+            published,
+            duration,
+            isShort
+          };
+          
+          compiledSearchVideos.push(videoObj);
+          
+          if (!allVideosMap.has(id)) {
+            allVideosMap.set(id, videoObj);
+          }
+        }
+      };
+
+      processSearchResult(pageVideos);
+
+      let pageCount = 1;
+      while (results.has_continuation && pageCount < 6) { // Compact pagination limit
+        results = await results.getContinuation();
+        const nextVideos = results.videos || [];
+        if (nextVideos.length === 0) break;
+        processSearchResult(nextVideos);
+        pageCount++;
+      }
+      console.log(`[YouTube] Deep search compile for "${q}" loaded ${pageCount} pages.`);
+    } catch (searchErr) {
+      console.error(`[YouTube] Deep search failed for "${q}":`, searchErr);
+    }
+  }
+
+  console.log(`[YouTube] Combined compiled search results length: ${compiledSearchVideos.length}`);
+
+  // 5. Backpopulate compiled search videos into matching playlists
+  for (const pl of playlistsResult) {
+    const plTitleLower = pl.title.toLowerCase();
+    let matchesQuery = false;
+    let keywordFilter = '';
+
+    if (plTitleLower.includes('pháp cú')) {
+      matchesQuery = true;
+      keywordFilter = 'pháp cú';
+    } else if (plTitleLower.includes('lời vàng')) {
+      matchesQuery = true;
+      keywordFilter = 'lời vàng';
+    }
+
+    if (matchesQuery) {
+      const matchedCompiled = compiledSearchVideos.filter(v => 
+        v.title.toLowerCase().includes(keywordFilter)
+      );
+
+      for (const mv of matchedCompiled) {
+        if (!pl.videos.some((v: any) => v.id === mv.id)) {
+          mv.isShort = checkIsShort(mv, pl.title);
+          pl.videos.push(mv);
+        }
+      }
+      console.log(`[YouTube] Playlist "${pl.title}" back-populated to total: ${pl.videos.length} videos.`);
+    }
+  }
+
+  // 6. Process Shorts for the All tab
   if (shortsData?.videos?.length) {
     shortsData.videos.forEach((item: any) => {
       const id = item.id || item.video_id || (item.on_tap_endpoint?.payload?.videoId);
       if (id && !allVideosMap.has(id)) {
         allVideosMap.set(id, {
             id: id,
-            title: item.title?.text || item.overlay_metadata?.primary_text?.text || 'Video',
+            title: cleanText(item.title?.text || item.overlay_metadata?.primary_text?.text || 'Video'),
             link: `https://www.youtube.com/watch?v=${id}`,
             thumbnail: item.thumbnails?.[0]?.url || item.thumbnail?.[0]?.url || item.on_tap_endpoint?.payload?.thumbnail?.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
             author: channelTitle,
@@ -245,13 +682,14 @@ async function doFetchData(channelId: string) {
   }
 
   const allVideos = Array.from(allVideosMap.values());
+  console.log(`[YouTube] Total unique cached videos compiled in dataset: ${allVideos.length}`);
 
-  // Fill in missing dates (for shorts or items without dates)
+  // Fill in missing dates. Limit to max 10 to avoid any rate limit warning or rate limit penalty
   const missingDates = allVideos.filter((v: any) => 
     !v.published || v.published === 'Gần đây' || v.published.includes('lượt xem')
   );
   
-  if (missingDates.length > 0) {
+  if (missingDates.length > 0 && missingDates.length <= 10) {
       console.log(`Fetching missing dates for ${missingDates.length} videos...`);
       for (let i = 0; i < missingDates.length; i += 20) {
           const chunk = missingDates.slice(i, i + 20);
