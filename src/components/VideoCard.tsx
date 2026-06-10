@@ -18,13 +18,16 @@ export function VideoCard({ video, index }: VideoCardProps) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, delay: Math.min(index * 0.04, 0.4) }}
     >
-      <div className={`relative w-full ${aspectRatioClass} bg-[#0d0d0d] overflow-hidden`}>
+      <div 
+        className={`relative w-full ${aspectRatioClass} bg-cover bg-center overflow-hidden`}
+        style={{ backgroundImage: `url(${video.thumbnail})` }}
+      >
         <iframe
           src={`https://www.youtube.com/embed/${video.id}?rel=0&playsinline=1`}
           title={video.title}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
-          className="w-full h-full border-0 absolute top-0 left-0"
+          className="w-full h-full border-0 absolute top-0 left-0 bg-transparent"
           loading="lazy"
         ></iframe>
       </div>
