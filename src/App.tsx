@@ -1,36 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Search, Sparkles, BookOpen, Quote, RefreshCw } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { Loader2, Search } from 'lucide-react';
+import { motion } from 'motion/react';
 import { Video, Playlist, YouTubeResponse } from './types';
 import { VideoCard } from './components/VideoCard';
-
-const BUDDHA_QUOTES = [
-  {
-    vi: "Mưa dẫu xiết rơi không ướt lòng đá tảng. Lời khen hay tiếng chê ngoài đời dẫu xôn xao, không lay động được tâm kẻ trí tĩnh lặng khinh an.",
-    pali: "Selo yathā ekaghano, vātena na samījati; Evaṃ nindāpasaṃsāsu, na samiñjanti paṇḍitā.",
-    ref: "Kinh Pháp Cú (Dhammapada) - Kệ số 81"
-  },
-  {
-    vi: "Hãy tự mình là ngọn đèn cho chính mình, hãy tự mình nương tựa chính mình. Dùng Chánh pháp làm ngọn đèn dẫn lối, dùng Chánh pháp làm chỗ trú ẩn kiên cố.",
-    pali: "Attadīpā viharatha attasaraṇā anaññasaraṇā, dhammadīpā dhammasaraṇā.",
-    ref: "Trường Bộ Kinh - Đại Bát Niết Bàn (DN 16)"
-  },
-  {
-    vi: "Chiến thắng vạn quân thù nơi bãi chiến trường lừng lẫy dẫu vẻ quang cũng không bằng tự chiến thắng chính tâm mình. Đó mới là chiến công oanh liệt nhất.",
-    pali: "Attā have jitaṃ seyyo, yā cāyaṃ itarā pajā; Attadantassa poṣassa, sadāsaṃyatacārino.",
-    ref: "Kinh Pháp Cú (Dhammapada) - Kệ số 104"
-  },
-  {
-    vi: "Với người có tâm thanh tịnh tịch lặng, mỗi bước chân lướt qua mặt đất thô ráp đều thanh thiết tựa như hoa sen lành hé nở giữa bùn nhơ.",
-    pali: "Yathāpi ruciraṃ pupphaṃ, vaṇṇavantaṃ sagandhakaṃ; Evaṃ subhāsitā vācā, saphalā hoti kubbatoti.",
-    ref: "Kinh Pháp Cú (Dhammapada) - Kệ số 52"
-  },
-  {
-    vi: "Sự bình yên thảnh thơi thực sự không nằm ở chỗ gặt hái thêm nhiều thứ, mà nằm ở việc biết buông xả bớt gánh nặng hư hao trong tâm trí.",
-    pali: "Sabbadānaṃ dhammadānaṃ jināti, sabbaṃ rasaṃ dhammaraso jināti.",
-    ref: "Kinh Pháp Cú (Dhammapada) - Kệ số 354"
-  }
-];
 
 const CHANNEL_ID = 'UClxiXO5JjB3k5y3-4OtAzug';
 
@@ -55,7 +27,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [localSearchQuery, setLocalSearchQuery] = useState('');
-  const [quoteIndex, setQuoteIndex] = useState(0);
   const [visitorStats, setVisitorStats] = useState<{
     totalVisits: number;
     todayVisits: number;
@@ -75,22 +46,13 @@ export default function App() {
     fetchData();
     trackVisitor();
 
-    // Select a random quote for start
-    setQuoteIndex(Math.floor(Math.random() * BUDDHA_QUOTES.length));
-
     // Periodic ping to keep session alive and retrieve real-time stats
     const interval = setInterval(() => {
       pingStats();
     }, 30000); // 30 seconds
 
-    return () => {
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, []);
-
-  const cycleQuote = () => {
-    setQuoteIndex((prev) => (prev + 1) % BUDDHA_QUOTES.length);
-  };
 
   const pingStats = async () => {
     try {
@@ -330,252 +292,168 @@ export default function App() {
   }, [data, activeTab, searchQuery]);
 
   return (
-    <div className="min-h-screen flex flex-col selection:bg-saffron-100 selection:text-saffron-900 relative">
-      
-      {/* Background Zen Glowing Mist */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute top-[-10%] left-[5%] w-[45vw] h-[45vw] rounded-full bg-emerald-500/5 blur-[120px] animate-breath" style={{ animationDuration: '14s' }} />
-        <div className="absolute top-[30%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-saffron-500/5 blur-[140px] animate-breath" style={{ animationDuration: '20s' }} />
-        <div className="absolute bottom-[10%] left-[20%] w-[40vw] h-[40vw] rounded-full bg-emerald-500/3 blur-[110px] animate-breath" style={{ animationDuration: '16s' }} />
-      </div>
-
+    <div className="min-h-screen flex flex-col">
       {/* Header/Hero Section */}
-      <header className="pt-12 md:pt-20 pb-10 md:pb-16 px-4 md:px-6 relative z-10">
-        <div className="max-w-4xl mx-auto text-center flex flex-col items-center">
-          
-          {/* Zen Lotus Wind Chime Badge */}
+      <header className="pt-16 md:pt-20 pb-8 md:pb-12 px-4 md:px-6 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-10 pointer-events-none flex items-center justify-center">
+          <div className="w-[600px] h-[600px] md:w-[800px] md:h-[800px] rounded-full bg-saffron-500 blur-3xl absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 mix-blend-multiply" />
+        </div>
+        
+        <div className="max-w-5xl mx-auto text-center relative z-10 flex flex-col items-center">
           <motion.div
-            initial={{ opacity: 0, scale: 0.85 }}
+            initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1, ease: "easeOut" }}
-            className="mb-5 md:mb-7 p-3.5 rounded-full bg-white/70 backdrop-blur-md text-saffron-700 shadow-sm border border-saffron-100/50 flex items-center justify-center animate-sway"
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            className="mb-4 md:mb-6 p-4 rounded-full bg-saffron-100/50 text-saffron-700 mx-auto w-fit"
           >
             <svg 
-              className="w-10 h-10 text-saffron-600" 
+              className="w-8 h-8 md:w-10 md:h-10" 
               viewBox="0 0 24 24" 
               fill="none" 
               stroke="currentColor" 
-              strokeWidth="1.2" 
+              strokeWidth="1.5" 
               strokeLinecap="round" 
               strokeLinejoin="round"
             >
-              {/* Artistic Lotus Flower petals */}
-              <path d="M12 2C12 2 10 7 10 11C10 15 12 22 12 22C12 22 14 15 14 11C14 7 12 2 12 2Z" />
-              <path d="M12 11C12 11 7 12 6 15C5.2 17.5 7.5 20 10 19C11.5 18.5 12 17 12 17" />
-              <path d="M12 11C12 11 17 12 18 15C18.8 17.5 16.5 20 14 19C12.5 18.5 12 17 12 17" />
-              <path d="M6 15C4 13 4.5 10 7 9C9 8.2 11 10 11 10" />
-              <path d="M18 15C20 13 19.5 10 17 9C15 8.2 13 10 13 10" />
+              <path d="M12 2c0 0-4 7-4 10a4 4 0 008 0c0-3-4-10-4-10z" />
+              <path d="M12 22a6 6 0 01-6-6c0-2.5 4-10 4-10" />
+              <path d="M12 22a6 6 0 006-6c0-2.5-4-10-4-10" />
+              <path d="M22 17a4 4 0 00-4-4c-2.5 0-6 3-6 9 3 0 7.5-1.5 10-5z" />
+              <path d="M2 17a4 4 0 014-4c2.5 0 6 3 6 9-3 0-7.5-1.5-10-5z" />
             </svg>
           </motion.div>
 
-          {/* Majestic Heading */}
           <motion.h1 
-            initial={{ opacity: 0, y: 24 }}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.9, delay: 0.2 }}
-            className="text-4xl sm:text-5xl md:text-6xl text-saffron-950 font-serif font-normal tracking-wide leading-tight mb-4 px-2"
+            transition={{ duration: 0.8, delay: 0.2 }}
+            className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl text-saffron-950 font-serif leading-tight mb-3 md:mb-4 px-2"
           >
-            {data?.channelTitle ? data.channelTitle : 'Kênh Vô Sự'}
+            {data?.channelTitle ? data.channelTitle : 'Chữa Lành & Tỉnh Thức'}
           </motion.h1>
           
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.9, delay: 0.3 }}
-            className="w-12 h-[1px] bg-saffron-300 my-2"
-          />
-
           <motion.p 
-            initial={{ opacity: 0, y: 24 }}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.9, delay: 0.4 }}
-            className="text-sm md:text-base text-saffron-700 tracking-widest uppercase font-sans font-medium mb-8"
+            transition={{ duration: 0.8, delay: 0.4 }}
+            className="text-base sm:text-lg text-saffron-800 max-w-3xl mx-auto font-light leading-relaxed px-4 whitespace-pre-line"
           >
-            Lắng đọng tâm hồn • Tìm về nẻo bình yên bên trong
+            Đức Phật dạy: "Hãy tự mình là ngọn đèn cho chính mình, hãy tự mình nương tựa chính mình, chớ nương tựa một điều gì khác. Dùng Chánh pháp làm ngọn đèn, dùng Chánh pháp làm chỗ nương tựa, không nương tựa một điều gì khác"
+            {"\n"}
+            <span className="italic block mt-2.5 font-normal text-saffron-600">"Tasmātihānanda, attadīpā viharatha attasaraṇā anaññasaraṇā, dhammadīpā dhammasaraṇā anaññasaraṇā."</span>
+            <span className="block mt-1.5 font-semibold text-xs md:text-sm text-saffron-700">Trường Bộ Kinh - Digha Nikaya 16</span>
           </motion.p>
-
-          {/* Wisdom Quote Slate (Phiến đá Tuệ Giác) */}
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, delay: 0.5 }}
-            className="w-full max-w-2xl bg-[#F6EFE5]/50 backdrop-blur-md rounded-2xl p-6 md:p-8 border border-saffron-200/45 shadow-[0_12px_40px_-10px_rgba(43,59,48,0.05)] relative overflow-hidden group hover:bg-[#F6EFE5]/75 transition-colors duration-500"
-          >
-            {/* Absolute watermark leaf */}
-            <div className="absolute right-0 bottom-[-15px] opacity-[0.03] text-saffron-950 pointer-events-none select-none">
-              <svg className="w-48 h-48" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12,2A10,10,0,0,1,22,12C22,18.5,15.5,22,12,22c-3.1,0-4.8-1.5-6.5-3.5S2,14.5,2,12A10,10,0,0,1,12,2M12,4a8,8,0,0,0-8,8c0,5.7,3.9,7.5,6.5,9.5C12.3,19.3,13.5,18,15,16c2.4-3.1,5-4.5,5-4A8,8,0,0,0,12,4Z"/>
-              </svg>
-            </div>
-
-            <div className="flex justify-between items-start mb-3.5 text-saffron-400">
-              <Quote className="w-7 h-7 opacity-30" />
-              <button 
-                onClick={cycleQuote}
-                className="p-1 px-2.5 rounded-full bg-white/60 hover:bg-white text-xs text-saffron-700 hover:text-saffron-950 border border-saffron-200/40 hover:border-saffron-300 flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
-                title="Đổi kệ ngôn Pháp Cú"
-              >
-                <RefreshCw className="w-3 h-3 text-saffron-500" />
-                Đổi Kệ Khác
-              </button>
-            </div>
-
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={quoteIndex}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.4 }}
-                className="min-h-[120px] flex flex-col justify-center"
-              >
-                <blockquote className="text-base sm:text-lg text-saffron-950 italic font-serif leading-relaxed px-1">
-                  "{BUDDHA_QUOTES[quoteIndex].vi}"
-                </blockquote>
-                
-                <p className="text-[13px] text-saffron-600 font-light italic mt-3 block font-serif tracking-wide leading-relaxed">
-                  {BUDDHA_QUOTES[quoteIndex].pali}
-                </p>
-
-                <cite className="block not-italic mt-4 text-[11px] sm:text-xs font-sans font-semibold tracking-wider text-saffron-700 uppercase">
-                  — {BUDDHA_QUOTES[quoteIndex].ref}
-                </cite>
-              </motion.div>
-            </AnimatePresence>
-          </motion.div>
-
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 pb-24 relative z-10">
+      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 pb-20 md:pb-24">
         
-        {/* Toolbar: Search, Select & Category Pebbles */}
+        {/* Toolbar: Search and Tabs */}
         {!isLoading && !error && data && (
-          <div className="sticky top-4 z-40 bg-white/95 backdrop-blur-xl rounded-2xl p-4 md:p-5 mb-8 md:mb-12 border border-saffron-100/70 shadow-[0_16px_50px_-15px_rgba(43,59,48,0.08)]">
-            
-            {/* Search and Select Frame */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-              
-              {/* Category selector on Mobile / Search on desktop */}
-              <div className="col-span-1 md:col-span-4 flex flex-col gap-2">
-                <label htmlFor="category-select" className="text-saffron-800 text-[11px] font-bold uppercase tracking-widest block pl-1">
-                  Chủ Đề Pháp Âm
+          <div className="sticky top-0 z-40 bg-saffron-50/95 backdrop-blur-md py-3.5 mb-6 md:mb-8 flex flex-col gap-3.5 items-stretch -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.12)] border-b border-saffron-200/60 transition-all">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 w-full">
+              <div className="flex flex-col gap-1.5 w-full">
+                <label htmlFor="category-select" className="text-saffron-800 text-[11px] md:text-xs font-bold uppercase tracking-wider">
+                  MỜI CHỌN CHỦ ĐỀ PHÁP ÂM ĐỂ NGHE
                 </label>
                 <select
                   id="category-select"
                   value={activeTab}
                   onChange={(e) => setActiveTab(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-[#FAF8F5] border border-saffron-200/50 rounded-xl text-saffron-950 text-sm font-serif font-medium focus:ring-2 focus:ring-saffron-500/50 focus:border-saffron-500 outline-none shadow-inner cursor-pointer transition-all h-11"
+                  className="w-full px-3.5 py-2 bg-white border border-saffron-200 rounded-xl text-saffron-950 text-sm font-medium focus:ring-2 focus:ring-saffron-500 outline-none shadow-sm cursor-pointer transition-all h-10"
                 >
-                  <option value="all">Tất cả pháp âm</option>
+                  <option value="all">Tất cả</option>
                   {data.playlists?.map(pl => (
                     <option key={pl.id} value={pl.id}>{pl.title}</option>
                   ))}
                 </select>
               </div>
 
-              {/* Advanced search bar */}
-              <div className="col-span-1 md:col-span-5 flex flex-col gap-2">
-                <label id="search-label" htmlFor="search-input" className="text-saffron-800 text-[11px] font-bold uppercase tracking-widest block pl-1">
-                  Từ khóa tìm kiếm
+              <div className="flex flex-col gap-1.5 w-full">
+                <label htmlFor="search-input" className="text-saffron-800 text-[11px] md:text-xs font-bold uppercase tracking-wider">
+                  TÌM KIẾM
                 </label>
                 <div className="relative w-full">
-                  <Search className="w-4 h-4 md:w-[18px] md:h-[18px] absolute left-3.5 top-1/2 -translate-y-1/2 text-saffron-500" />
+                  <Search className="w-4 h-4 md:w-5 md:h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-saffron-400" />
                   <input
                     id="search-input"
-                    aria-labelledby="search-label"
                     type="text"
-                    placeholder="Tìm câu kinh, bài giảng v.v..."
+                    placeholder="Tìm kiếm video..."
                     value={localSearchQuery}
                     onChange={(e) => setLocalSearchQuery(e.target.value)}
-                    className="w-full pl-11 pr-4 py-2.5 text-sm bg-[#FAF8F5] rounded-xl outline-none focus:ring-2 focus:ring-saffron-500/50 border border-saffron-200/50 text-saffron-950 font-medium transition-all shadow-inner h-11 placeholder:text-saffron-400"
+                    className="w-full pl-10 pr-4 py-2 text-sm bg-white rounded-xl outline-none focus:ring-2 focus:ring-saffron-500 border border-saffron-200 transition-all shadow-sm h-10"
                   />
                 </div>
               </div>
-
-              {/* Status display counts on toolbar right */}
-              <div className="col-span-1 md:col-span-3">
-                <div className="bg-[#FCFAF6] border border-saffron-100 rounded-xl p-2.5 h-11 flex items-center justify-around text-center select-none shadow-sm class-stats shrink-0">
-                  <div className="flex flex-col items-center">
-                    <span className="text-[9px] font-semibold tracking-wider text-saffron-500 uppercase leading-none">Online</span>
-                    <span className="text-xs font-bold font-mono text-saffron-900 flex items-center gap-1 mt-0.5">
-                      <span className="relative flex h-1.5 w-1.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-                      </span>
-                      {visitorStats ? (visitorStats.onlineCount || 1).toLocaleString('vi-VN') : '1'}
-                    </span>
-                  </div>
-                  <div className="h-6 w-[1px] bg-saffron-150" />
-                  <div className="flex flex-col items-center">
-                    <span className="text-[9px] font-semibold tracking-wider text-saffron-500 uppercase leading-none">Hôm Nay</span>
-                    <span className="text-xs font-bold font-mono text-saffron-900 mt-0.5">
-                      {visitorStats ? visitorStats.todayVisits.toLocaleString('vi-VN') : '1'}
-                    </span>
-                  </div>
-                  <div className="h-6 w-[1px] bg-saffron-150" />
-                  <div className="flex flex-col items-center">
-                    <span className="text-[9px] font-semibold tracking-wider text-saffron-500 uppercase leading-none">Tổng Nghe</span>
-                    <span className="text-xs font-bold font-mono text-saffron-900 mt-0.5">
-                      {visitorStats ? visitorStats.totalVisits.toLocaleString('vi-VN') : '21.789'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
             </div>
 
+            {/* Thống kê truy cập (Sticky counters under search, scrolling together) */}
+            <div className="w-full max-w-xl mx-auto pt-2.5 border-t border-saffron-200/40 flex flex-col items-center gap-2">
+              <div className="grid grid-cols-3 gap-2 w-full">
+                <div className="bg-white/70 backdrop-blur-sm rounded-xl py-1 px-2 border border-saffron-100 shadow-sm flex flex-col items-center justify-center">
+                  <span className="text-[9px] md:text-[11px] font-semibold uppercase tracking-wider text-saffron-600 leading-tight text-center">
+                    TỔNG TRUY CẬP
+                  </span>
+                  <span className="text-xs md:text-sm font-bold font-mono text-saffron-900 mt-0.5">
+                    {visitorStats ? visitorStats.totalVisits.toLocaleString('vi-VN') : '21.789'}
+                  </span>
+                </div>
+                <div className="bg-white/70 backdrop-blur-sm rounded-xl py-1 px-2 border border-saffron-100 shadow-sm flex flex-col items-center justify-center">
+                  <span className="text-[9px] md:text-[11px] font-semibold uppercase tracking-wider text-saffron-600 leading-tight text-center">
+                    ĐANG ONLINE
+                  </span>
+                  <span className="text-xs md:text-sm font-bold font-mono text-saffron-900 flex items-center gap-1 mt-0.5">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                    </span>
+                    {visitorStats ? (visitorStats.onlineCount || 1).toLocaleString('vi-VN') : '1'}
+                  </span>
+                </div>
+                <div className="bg-white/70 backdrop-blur-sm rounded-xl py-1 px-2 border border-saffron-100 shadow-sm flex flex-col items-center justify-center">
+                  <span className="text-[9px] md:text-[11px] font-semibold uppercase tracking-wider text-saffron-600 leading-tight text-center">
+                    HÔM NAY
+                  </span>
+                  <span className="text-xs md:text-sm font-bold font-mono text-saffron-900 mt-0.5">
+                    {visitorStats ? visitorStats.todayVisits.toLocaleString('vi-VN') : '1'}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Video Grid */}
         {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-24 text-saffron-600">
-            <Loader2 className="w-9 h-9 animate-spin text-saffron-500 mb-4" />
-            <p className="animate-pulse flex items-center gap-2 text-sm font-serif tracking-widest font-normal uppercase text-saffron-700">
-              <span>Đang lắng lọc pháp âm</span>
-              <span className="text-2xl mt-[-6px]">...</span>
-            </p>
+          <div className="flex flex-col items-center justify-center py-20 text-saffron-600">
+            <Loader2 className="w-8 h-8 md:w-10 md:h-10 animate-spin mb-4" />
+            <p className="animate-pulse flex items-center gap-2 text-sm md:text-base"><span>Đang tải video</span><span className="text-2xl mt-[-6px]">...</span></p>
           </div>
         ) : error ? (
-          <div className="text-center py-12 text-sm text-red-700 bg-red-50/50 rounded-2xl border border-red-100 max-w-2xl mx-auto px-4 font-serif">
-            <p className="italic">"{error}"</p>
-            <p className="mt-2 text-xs font-sans text-red-500">Mời bạn kiểm tra đường truyền hoặc làm mới lại trang.</p>
+          <div className="text-center py-10 md:py-12 text-sm md:text-base text-red-600 bg-red-50 rounded-2xl border border-red-100 max-w-2xl mx-auto mx-4 md:mx-auto">
+            <p>{error}</p>
           </div>
         ) : displayedVideos.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 md:gap-7 lg:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
             {displayedVideos.map((video, idx) => (
               <VideoCard key={`${video.id}-${idx}`} video={video} index={idx} />
             ))}
           </div>
         ) : (
-          <div className="text-center py-24 opacity-60 bg-saffron-100/20 rounded-2xl border border-dashed border-saffron-200 p-8 max-w-xl mx-auto">
-            <p className="text-saffron-800 text-lg font-serif">Chưa tìm thấy Pháp âm phù hợp.</p>
-            <p className="text-xs text-saffron-600 mt-1 font-sans">Mời bạn điều chỉnh từ khóa tìm kiếm hoặc chọn danh mục chủ đề khác.</p>
+          <div className="text-center py-20 opacity-60">
+            <p className="text-saffron-800 text-base md:text-lg">Không tìm thấy video nào.</p>
           </div>
         )}
       </main>
 
       {/* Footer */}
-      <footer className="py-12 md:py-20 px-4 text-center text-saffron-700 text-xs md:text-sm border-t border-saffron-200/50 flex flex-col items-center gap-6 bg-saffron-50/30 relative z-10">
-        
-        {/* Pure Lotus Blossom SVG Graphic inside Footer */}
-        <div className="text-saffron-300">
-          <svg className="w-16 h-10 mx-auto" viewBox="0 0 100 40" fill="none" stroke="currentColor" strokeWidth="1.2">
-            <path d="M50 5 Q40 25, 30 30 Q25 15, 50 35 Q75 15, 70 30 Q60 25, 50 5Z" />
-            <path d="M50 20 Q44 28, 40 32" />
-            <path d="M50 20 Q56 28, 60 32" />
-            <line x1="15" y1="35" x2="85" y2="35" strokeDasharray="4,4" />
-          </svg>
-        </div>
-
-        <div className="flex flex-col items-center gap-2.5 max-w-lg mx-auto leading-relaxed">
-          <p className="font-serif italic text-base font-semibold text-saffron-900">“Chư ác mạc tác, chúng thiện phụng hành, tự tịnh kỳ ý, thị chư Phật giáo.”</p>
-          <div className="w-8 h-[1px] bg-saffron-200 my-1" />
-          <p className="font-serif font-medium text-saffron-800 mt-1">Chớ làm các điều ác — Siêng làm các điều lành</p>
-          <p className="font-serif font-medium text-saffron-800">Giữ tâm ý trong sạch — Ấy lời chư Phật dạy</p>
-          <p className="mt-4 font-serif italic text-saffron-600 text-xs tracking-wide">Trích Kinh Pháp Cú, Kệ Số 183 • Nam Mô Bổn Sư Thích Ca Mâu Ni Phật</p>
+      <footer className="py-8 md:py-12 px-4 text-center text-saffron-700 text-xs md:text-sm border-t border-saffron-200/50 flex flex-col items-center gap-4 md:gap-6 bg-saffron-50/30">
+        <div className="flex flex-col items-center gap-1.5 md:gap-2">
+          <p className="font-medium">Chớ làm các điều ác (Chư ác mạc tác)</p>
+          <p className="font-medium">Siêng làm các điều lành (Chúng thiện phụng hành)</p>
+          <p className="font-medium">Giữ tâm ý trong sạch (Tự tịnh kỳ ý)</p>
+          <p className="font-medium">Ấy lời chư Phật dạy (Thị chư Phật giáo)</p>
+          <p className="mt-2 font-serif italic text-saffron-800 text-sm md:text-base">Kinh Pháp Cú, Số 183. Namo Sakya Muni Buddha!</p>
         </div>
       </footer>
     </div>
